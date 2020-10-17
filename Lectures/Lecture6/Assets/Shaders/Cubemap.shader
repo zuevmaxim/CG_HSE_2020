@@ -89,6 +89,18 @@
                 return a2 / (UNITY_PI * Sqr(NDotH2 * (a2 - 1) + 1));
             }
 
+            fixed3 random_spere_point(int seed1, int seed2)
+            {
+                fixed a = 2 * UNITY_PI * Random(seed1);
+                fixed cosTheta = 2 * Random(seed2) - 1;
+                fixed sinTheta = sqrt(1 - Sqr(cosTheta));
+                fixed3 w;
+                w.x = cos(a) * sinTheta;
+                w.y = sin(a) * sinTheta;
+                w.z = cosTheta;
+                return w;
+            }
+
             fixed4 frag (v2f i) : SV_Target
             {
                 float3 normal = normalize(i.normal);
@@ -98,10 +110,19 @@
                 // Replace this specular calculation by Montecarlo.
                 // Normalize the BRDF in such a way, that integral over a hemysphere of (BRDF * dot(normal, w')) == 1
                 // TIP: use Random(i) to get a pseudo-random value.
-                float3 viewRefl = reflect(-viewDirection.xyz, normal);
-                float3 specular = SampleColor(viewRefl);
-                
-                return fixed4(specular, 1);
+                int n = 1000;
+                fixed3 result = 0;
+                fixed norm = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    fixed3 w = normalize(random_spere_point(i, n + i));
+                    fixed c = max(0, dot(normal, w)); // only hemysphere
+                    fixed weight = c * GetSpecularBRDF(viewDirection, w, normal);
+                    norm += weight;
+                    result += SampleColor(w) * weight;
+                }
+                result /= norm;
+                return fixed4(result, 1);
             }
             ENDCG
         }
