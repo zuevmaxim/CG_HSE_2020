@@ -1,4 +1,3 @@
-﻿﻿// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel ComputeHarmonics
 
 #define PI            3.14159265359f
@@ -9,6 +8,8 @@
 #define INV_FOUR_PI   0.07957747155f
 #define HALF_PI       1.57079632679f
 #define INV_HALF_PI   0.636619772367f
+#include <HLSLSupport.cginc>
+#include <UnityCG.cginc>
 
 RWStructuredBuffer<float4> SH_0_1_r;
 RWStructuredBuffer<float4> SH_0_1_g;
@@ -45,6 +46,66 @@ float3 SampleColor(float3 direction)
     return tex.rgb;
 }
 
+float Sqr(float x)
+{
+    return x * x;
+}
+
+
+float Sg(float3 w, int l, int m)
+{
+    float Sqrt_pi = sqrt(UNITY_PI);
+    switch (l)
+    {
+    case 0:
+        return 0.5 / Sqrt_pi;
+    case 1:
+        {
+            switch (m)
+            {
+            case -1:
+                return -0.5 * sqrt(3) * w.y / Sqrt_pi;
+            case 0:
+                return 0.5 * sqrt(3) * w.z / Sqrt_pi;
+            case 1:
+                return -0.5 * sqrt(3) * w.x / Sqrt_pi;
+            default: return 0.0;
+            }
+        }
+    case 2:
+        {
+            switch (m)
+            {
+            case -2:
+                return 0.5 * sqrt(15) * w.y * w.x / Sqrt_pi;
+            case -1:
+                return -0.5 * sqrt(15) * w.y * w.z / Sqrt_pi;
+            case -0:
+                return 0.25 * sqrt(5) * (3 * Sqr(w.z) - 1) / Sqrt_pi;
+            case 1:
+                return -0.5 * sqrt(15) * w.z * w.x / Sqrt_pi;
+            case 2:
+                return 0.25 * sqrt(15) * (Sqr(w.x) - Sqr(w.y)) / Sqrt_pi;
+            default: return 0.0;
+            }
+        }
+    default: return 0.0;
+    }
+}
+
+
+fixed3 Random_sphere_point(int seed1, int seed2)
+{
+    fixed a = 2 * UNITY_PI * Random(seed1);
+    fixed cos_theta = 2 * Random(seed2) - 1;
+    fixed sin_theta = sqrt(1 - Sqr(cos_theta));
+    fixed3 w;
+    w.x = cos(a) * sin_theta;
+    w.y = sin(a) * sin_theta;
+    w.z = cos_theta;
+    return w;
+}
+
 [numthreads(1024, 1, 1)]
 void ComputeHarmonics(uint id : SV_DispatchThreadID)
 {
@@ -68,7 +129,101 @@ void ComputeHarmonics(uint id : SV_DispatchThreadID)
     // You can see the Random(i) function. Use it just as with the previous task.
     
     // TASK: project light from _Env to spherical harmonic coefficients and store them in results[]
-    
+
+    for (int l = 0; l <= 2; l++)
+    {
+        for (int m = -2; m <= 2; m++)
+        {
+            fixed3 result = 0;
+            int n = SAMPLES;
+            for (int i = 0; i < n; i++)
+            {
+                fixed3 w = normalize(Random_sphere_point(i, n + i));
+                result += SampleColor(w) * Sg(w, l, m);
+            }
+            result /= n;
+
+            switch (l)
+            {
+            case 0:
+                {
+                    results[0][3] = result.r;
+                    results[1][3] = result.g;
+                    results[2][3] = result.b;
+                    break;
+                }
+            case 1:
+                {
+                    switch (m)
+                    {
+                    case -1:
+                        results[0][1] = result.r;
+                        results[1][1] = result.g;
+                        results[2][1] = result.b;
+                        break;
+                    case 0:
+                        results[0][2] = result.r;
+                        results[1][2] = result.g;
+                        results[2][2] = result.b;
+                        break;
+                    case 1:
+                        results[0][0] = result.r;
+                        results[1][0] = result.g;
+                        results[2][0] = result.b;
+                        break;
+                    default: break;
+                    }
+                    break;
+                }
+            case 2:
+                {
+                    switch (m)
+                    {
+                    case -2:
+                        {
+                            results[3][0] = result.r;
+                            results[4][0] = result.g;
+                            results[5][0] = result.b;
+                            break;
+                        }
+                    case -1:
+                        {
+                            results[3][1] = result.r;
+                            results[4][1] = result.g;
+                            results[5][1] = result.b;
+                            break;
+                        }
+                    case 0:
+                        {
+                            results[3][3] = result.r;
+                            results[4][3] = result.g;
+                            results[5][3] = result.b;
+                            break;
+                        }
+                    case 1:
+                        {
+                            results[3][2] = result.r;
+                            results[4][2] = result.g;
+                            results[5][2] = result.b;
+                            break;
+                        }
+                    case 2:
+                        {
+                            results[6][0] = result.r;
+                            results[6][1] = result.g;
+                            results[6][2] = result.b;
+                            break;
+                        }
+                    default: break;
+                    }
+                    break;
+                }
+            default: break;;
+            }
+        }
+    }
+
+
     SH_0_1_r[id] = results[0];
     SH_0_1_g[id] = results[1];
     SH_0_1_b[id] = results[2];
