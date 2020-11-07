@@ -66,9 +66,20 @@
                 return float(Hash(seed)) / 4294967295.0; // 2^32-1
             }
             
-            float3 SampleColor(float3 direction)
-            {   
-                half4 tex = texCUBE(_Cube, direction);
+            float mip_map_level(float2 pos)
+            {
+              float2  dx  = ddx(pos);
+              float2  dy  = ddy(pos);
+              return 0.5 * log2(max(dot(dx, dx), dot(dy, dy)));
+            }
+            
+            float3 SampleColor(float3 direction, float2 pos)
+            {
+                float prefered_mip_map_level = mip_map_level(pos);
+//                float blured_mip_map_level = 5 * abs(sin(12 * _Time));
+                float blured_mip_map_level = 5 * _Roughness;
+                float level = max(blured_mip_map_level, prefered_mip_map_level);
+                half4 tex = texCUBElod(_Cube, float4(direction, level));
                 return DecodeHDR(tex, _Cube_HDR).rgb;
             }
             
@@ -99,7 +110,7 @@
                 // Normalize the BRDF in such a way, that integral over a hemysphere of (BRDF * dot(normal, w')) == 1
                 // TIP: use Random(i) to get a pseudo-random value.
                 float3 viewRefl = reflect(-viewDirection.xyz, normal);
-                float3 specular = SampleColor(viewRefl);
+                float3 specular = SampleColor(viewRefl, i.pos.xy);
                 
                 return fixed4(specular, 1);
             }
