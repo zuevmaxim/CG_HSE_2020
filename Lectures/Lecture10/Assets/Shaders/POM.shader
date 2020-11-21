@@ -26,6 +26,9 @@
 
     struct v2f {
         float3 worldPos : TEXCOORD0;
+        float3 wTangent: TEXCOORD1;
+        float3 wBitangent: TEXCOORD2;
+        float3 wNormal: TEXCOORD3;
         half3 worldSurfaceNormal : TEXCOORD4;
         // texture coordinate for the normal map
         float2 uv : TEXCOORD5;
@@ -39,13 +42,14 @@
         v2f o;
         o.clip = UnityObjectToClipPos(vertex);
         o.worldPos = mul(unity_ObjectToWorld, vertex).xyz;
-        half3 wNormal = UnityObjectToWorldNormal(normal);
-        half3 wTangent = UnityObjectToWorldDir(tangent.xyz);
+        o.wNormal = UnityObjectToWorldNormal(normal);
+        o.wTangent = UnityObjectToWorldDir(tangent.xyz);
         
         o.uv = uv;
         o.worldSurfaceNormal = normal;
         
         // compute bitangent from cross product of normal and tangent and output it
+        o.wBitangent = cross(o.wNormal, o.wTangent) * tangent.w;
         
         return o;
     }
@@ -64,18 +68,43 @@
     
     float _Reflectivity;
 
+    float height(float2 uv)
+    {
+        return _MaxHeight * (1 - tex2D(_HeightMap, uv));
+    }
+
     void frag (in v2f i, out half4 outColor : COLOR, out float outDepth : DEPTH)
     {
         float2 uv = i.uv;
         
         float3 worldViewDir = normalize(i.worldPos.xyz - _WorldSpaceCameraPos.xyz);
+        float3x3 transform = float3x3(
+            i.wTangent,
+            i.wBitangent,
+            i.wNormal
+        );
+        float3 view = mul(transform, worldViewDir);
 #if MODE_BUMP
         // Change UV according to the Parallax Offset Mapping
+        uv -= view.xy * height(uv) / view.z; 
 #endif   
     
         float depthDif = 0;
 #if MODE_POM | MODE_POM_SHADOWS    
         // Change UV according to Parallax Occclusion Mapping
+        float curH, h = height(uv);
+        float3 curA, a = 0;
+        float3 step = view * _StepLength;
+        for (int j = 0; j < 100; ++j)
+        {
+            curA = a + step;
+            curH = height(uv + curA.xy);
+            if (abs(curA.z) > curH) break;
+            h = curH;
+            a = curA;
+        }
+        float p = abs(h - abs(a.z)) / (abs(h - abs(a.z)) + abs(abs(curA.z) - curH));
+        uv += (1 - p) * a.xy + p * curA.xy;
 #endif
 
         float3 worldLightDir = normalize(_WorldSpaceLightPos0.xyz);
@@ -87,6 +116,8 @@
         half3 normal = i.worldSurfaceNormal;
 #if !MODE_PLAIN
         // Implement Normal Mapping
+        transform[1] *= -1;
+        normal = mul(transform, UnpackNormal(tex2D(_NormalMap, uv)));
 #endif
 
         // Diffuse lightning
